@@ -71,11 +71,12 @@ def locate_maxima(hist, bins):
     if not isinstance(hist, np.ndarray):
         hist = np.array(hist)
 
+    hmaxidx = np.where(hist == max(hist))[0][0]
     hprim = np.diff(hist)
     bprim = recalculate_bins(bins)
 
     ret = []
-    for idx in range(hprim.size - 2):
+    for idx in range(hmaxidx - 2, hprim.size - 2):
         if hprim[idx] * hprim[idx+1] < 0 and\
            hprim[idx-1] * hprim[idx+2] < 0 and\
            hprim[idx-1] * hprim[idx] > 0 and\
@@ -88,10 +89,30 @@ def locate_maxima(hist, bins):
     return ret[-3:]
 
 
-def run_sample_check():
-    data = read_atf("sample.atf")
+def get_A_and_B(datafile, pm='minus', bins=33):
+    data = read_atf(datafile)
 
-    bins = 33#25
+    if pm == 'minus':
+        data = data["C"][data["C"] < 0]
+    else:
+        data = data["C"][data["C"] > 0]
+
+    mean = data.median()
+    h, b = histogram(data, bins=bins)
+    Lidx, Midx, Ridx = locate_maxima(h, b)
+    lsm = locate_stages_middlepoint(h, b, (Lidx, Midx, Ridx), 9, True)
+
+    A, B = lsm['A'], lsm['B']
+    return A, B
+
+
+def run_check(fname):
+    # data = read_atf("sample.atf")
+    # data = read_atf("data/2019_04_04_00013_20D.atf")
+    data = read_atf(fname)
+    name = fname[:-4]
+
+    bins = 33 #int(np.sqrt(len(data))) #25
     data = data["C"][data["C"] < 0]
     mean = data.median()
 
@@ -108,20 +129,64 @@ def run_sample_check():
     fig = ax.get_figure()
     # another historgam plot
     plt.plot(b, h, '-o')
-    #extrema location
+    # extrema location
     for idx in [Lidx, Midx, Ridx]:
         plt.plot([b[idx]], [np.polyval(lsm['fit'], b[idx])], 'or')
     # polyfit plot
     for x in [A, B]:
         plt.plot([x], [np.polyval(lsm['fit'], x)], 'ok')
-    fig.savefig('sample_hist.png')
+    fig.savefig(name + '_hist.png')
     plt.close()
 
     plt.plot(bprim, hprim, 'o-')
     plt.axhline(0, color='k')
-    plt.plot([b[Lidx], b[Midx], b[Ridx]], [0] * 3, 'or')
-    plt.savefig('sample_histprim.png')
+    # plt.plot([b[Lidx], b[Midx], b[Ridx]], [0] * 3, 'or')
+    plt.savefig(name + '_histprim.png')
+
+
+def run_sample_check():
+    run_check('sample.atf')
+
+
+def is_close(a, b, eps=0.1):
+    return abs(1 - a / b) < eps
+    # return abs(a - b) < eps
+
+
+def detect_drop(data, window=200000, step=20000):
+    ld = len(data)
+    for idx in range(0, ld - window - step, step):
+        a = np.mean(data[idx:idx+window])
+        b = np.mean(data[idx+step:idx+window+step])
+        print(idx, a, b, is_close(a, b))
+        if not is_close(a, b):
+            return idx
+    return ld
+
+
+def plot_data(fname, maks=-1):
+    data = read_atf(fname)
+    name = fname[:-4]
+    data = data["C"][data["C"] < 0]
+    ax = data[0:maks:10000].plot()
+    fig = ax.get_figure()
+    fig.savefig(name + '_current.png')
+    plt.close()
 
 
 if __name__ == "__main__":
-    print(run_sample_check())
+    fname = "data/2019_04_04_00013_20D.atf"
+    data = read_atf(fname)
+    data = data["C"][data["C"] < 0]
+    dd = detect_drop(data)
+    print(dd, len(data))
+    plot_data(fname, dd)
+    # plot_data("data/2019_04_04_00013_20D.atf")
+    # run_check('data/2019_04_04_00015_60D.atf')
+    # print(run_sample_check())
+    # import glob
+    # for fn in glob.glob('data/*D.atf'):
+    #     try:
+    #         print(fn, plot_data(fn))
+    #     except:
+    #         print(fn, "...lipa")
